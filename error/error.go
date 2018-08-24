@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"qing/go-helper/common"
 )
 
 type Err struct {
@@ -80,9 +81,9 @@ type StackInfo struct {
 }
 
 func (info StackInfo) String() string {
-	bf := bufferPool.Get().(*bytes.Buffer)
+	bf := common.BytesBufferPool.Get().(*bytes.Buffer)
 	bf.Reset()
-	defer bufferPool.Put(bf)
+	defer common.BytesBufferPool.Put(bf)
 	bf.WriteString(info.Package)
 	bf.WriteString(" ")
 	bf.WriteString(info.Function)
@@ -91,16 +92,6 @@ func (info StackInfo) String() string {
 		bf.WriteString(info.Code)
 	}
 	return bf.String()
-}
-
-var bufferPool = &sync.Pool{
-	New: func() interface{} {
-		return new(bytes.Buffer)
-	},
-}
-
-func GetBufferPool() *sync.Pool {
-	return bufferPool
 }
 
 func Wrap(err error, msg string, fields Fields) error {
