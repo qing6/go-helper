@@ -35,7 +35,8 @@ func (err *Err) Error() string {
 	bf := bufferPool.Get().(*bytes.Buffer)
 	bf.Reset()
 	defer bufferPool.Put(bf)
-	bf.WriteString("Error: ")
+	bf.WriteString("Error: at")
+	bf.WriteString(err.CreatedAt.Format(time.RFC3339Nano))
 	bf.WriteString(err.Msg)
 	bf.WriteString("\tinfo={")
 	for k, v := range err.Fields {
