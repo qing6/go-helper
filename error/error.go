@@ -3,7 +3,6 @@ package errPkg
 import (
 	"bytes"
 	"fmt"
-	"sync"
 	"time"
 	"qing/go-helper/common"
 )
@@ -33,9 +32,9 @@ func FailBy(err error, msg string, fields Fields) *Err {
 }
 
 func (err *Err) Error() string {
-	bf := bufferPool.Get().(*bytes.Buffer)
+	bf := common.BytesBufferPool.Get().(*bytes.Buffer)
 	bf.Reset()
-	defer bufferPool.Put(bf)
+	defer common.BytesBufferPool.Put(bf)
 	bf.WriteString("Error: at")
 	bf.WriteString(err.CreatedAt.Format(time.RFC3339Nano))
 	bf.WriteString(err.Msg)
@@ -71,6 +70,14 @@ func (err *Err) Where(pkg, function string) *Err {
 	info.Package = pkg
 	info.Function = function
 	err.StackInfo = info
+	return err
+}
+
+func GetCause(err error) error {
+	known, ok := err.(*Err)
+	if ok && known.Cause != nil{
+		return GetCause(known.Cause)
+	}
 	return err
 }
 
