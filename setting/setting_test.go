@@ -1,46 +1,50 @@
 package setting
 
 import (
-	"encoding/json"
 	"github.com/stretchr/testify/assert"
 	"os"
 	"qing/go-helper/error"
 	testingX "qing/go-helper/testing"
 	"testing"
+	"encoding/json"
+	"strings"
 )
 
 func Test_initFromFile(t *testing.T) {
 	// situation 1: not support config file format
 	path := "exist.jjj"
 	err := initFromFile(path, nil)
-	wantedErr := errPkg.Fail("not supported file format", errPkg.Fields{
+	wantedErr := errPkg.Fail("file format is not supported.", errPkg.Fields{
 		"file": path,
-		"exts": []string{".json"},
+		"supported extensions": []string{".json"},
 	})
-	assert.Equal(t, wantedErr, err, "situation 1: not support config file format")
+	assert.Equal(t, testingX.IgnoreCreatedAt(wantedErr), testingX.IgnoreCreatedAt(err),
+		"situation 1: not support config file format")
 
 	// situaton 2: open file fail
 	path = "not-exist.json"
 	err = initFromFile(path, nil)
 	wantedErr = func(file string) *errPkg.Err {
 		_, err := os.Open(file)
-		return errPkg.FailBy(err, "open config file fail", errPkg.Fields{"file": file})
+		return errPkg.FailBy(err, "open config file fail.", errPkg.Fields{"file": file})
 	}(path)
-	assert.Equal(t, wantedErr, err, "situaton 2: open file fail")
+	assert.Equal(t, testingX.IgnoreCreatedAt(wantedErr), testingX.IgnoreCreatedAt(err),
+		"situaton 2: open file fail")
 
 	// situation 3: unmarshal fail
-
 	v1 := make([]string, 0)
 	mockJson := `{"omg":true, "size":10}`
 	path = "1.json"
 	f := testingX.MockFile(path, mockJson)
 	err = initFromFile(path, &v1)
 	wantedErr = func(jsonStr string) *errPkg.Err {
-		err := json.Unmarshal([]byte(jsonStr), &v1)
-		return errPkg.FailBy(err, "unmarshal config file's content bytes to confObj fail",
+		//err := json.Unmarshal([]byte(jsonStr), &v1)
+		err := json.NewDecoder(strings.NewReader(jsonStr)).Decode(&v1)
+		return errPkg.FailBy(err, "unmarshal config file's content bytes to confObj fail.",
 			errPkg.Fields{"file": path})
 	}(mockJson)
-	assert.Equal(t, wantedErr, err, "situation 3: unmarshal fail")
+	assert.Equal(t, testingX.IgnoreCreatedAt(wantedErr), testingX.IgnoreCreatedAt(err),
+		"situation 3: unmarshal fail")
 	f.Remove()
 
 	// ok

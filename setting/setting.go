@@ -44,7 +44,7 @@ func Init(v interface{}) (err error) {
 		}
 		if needCheck, ok := v.(CanChecked); ok {
 			if err = needCheck.Access(); err != nil {
-				err = errPkg.FailBy(err, "do check by Access() fail", nil)
+				err = errPkg.FailBy(err, "do check by Access() fail.", nil)
 			}
 		}
 	}()
@@ -57,7 +57,7 @@ func Init(v interface{}) (err error) {
 			return true
 		}
 		if unmarshalErr == nil {
-			unmarshalErr = errPkg.Fail("do unmarshal fail", nil)
+			unmarshalErr = errPkg.Fail("do unmarshal fail.", nil)
 		}
 		unmarshalErr.SetField(source, source)
 		return false
@@ -166,7 +166,7 @@ func InitFromFile(v FromFile) error {
 	var setErr error
 	defer func() {
 		if panicO := recover(); panicO != nil {
-			setErr = errPkg.Fail("using reflect do set fail", errPkg.Fields{"panic": fmt.Sprint(panicO)})
+			setErr = errPkg.Fail("using reflect do set fail.", errPkg.Fields{"panic": fmt.Sprint(panicO)})
 		}
 	}()
 	reflect.ValueOf(v).Elem().Set(vVal)
@@ -185,9 +185,9 @@ func initFromFile(path string, v interface{}) error {
 
 	parse := fromFileRecords[filepath.Ext(path)]
 	if parse == nil {
-		return errPkg.Fail("not supported file format", errPkg.Fields{
+		return errPkg.Fail("file format is not supported.", errPkg.Fields{
 			"file": path,
-			"exts": func() []string {
+			"supported extensions": func() []string {
 				exts := make([]string, 0)
 				for k, _ := range fromFileRecords {
 					exts = append(exts, k)
@@ -200,11 +200,11 @@ func initFromFile(path string, v interface{}) error {
 	f, err := os.Open(path)
 	defer f.Close()
 	if err != nil {
-		return errPkg.FailBy(err, "open config file fail", errPkg.Fields{"file": path})
+		return errPkg.FailBy(err, "open config file fail.", errPkg.Fields{"file": path})
 	}
 
 	if err = parse(f, v); err != nil {
-		return errPkg.FailBy(err, "unmarshal config file's content bytes to confObj fail", 
+		return errPkg.FailBy(err, "unmarshal config file's content bytes to confObj fail.",
 			errPkg.Fields{"file": path})
 	}
 

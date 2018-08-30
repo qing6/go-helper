@@ -61,18 +61,7 @@ func MockFile(path string, content string) CanRemove {
 		return new(doNothing)
 	}
 
-	result := new(mockingFileNote)
-	result.file = path
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		result.rollbacker, result.processErr = mockNonExistentFile(path)
-	} else if err != nil {
-		result.processErr = err
-		return result
-	} else {
-		result.rollbacker, result.processErr = mockExistentFile(path)
-	}
-
-	return result
+	return newMockingFileNote(path).Write(content)
 }
 
 type CanRemove interface{
@@ -88,20 +77,55 @@ func (canRemove doNothing) Remove() error {
 type mockingFileNote struct {
 	processErr error
 	file string
-	rollbacker mockingFileRollbacker
+	opt mockingFileOpt
 }
 
-type mockingFileRollbacker interface {
-	rollback(file string) error
+type mockingFileOpt interface {
+	forward(file string) error
+	back(file string) error
 	name() string
 }
 
-func (note mockingFileNote) Remove() error {
-	if err := note.processErr; err != nil {
-		return err
+func newMockingFileNote(path string) *mockingFileNote {
+	result := new(mockingFileNote)
+	result.file = path
+	if stat, err := os.Stat(path); os.IsNotExist(err) {
+		result.opt, result.processErr = mockNonExistentFile(path)
+	} else if err != nil {
+		result.processErr = err
+		return result
+	} else {
+		result.opt, result.processErr = mockExistentFile(path, stat)
 	}
-	return errPkg.Wrap(note.rollbacker.rollback(note.file), "mocking-file note rollbacker execution fail",
-		errPkg.Fields{"rollbacker":note.rollbacker.name()})
+	return result
+}
+
+func (note *mockingFileNote) Write(content string) *mockingFileNote {
+	if note.processErr == nil {
+		note.processErr = errPkg.Wrap(note.opt.forward(note.file),
+			"mocking-file-note's opt exec forward fail", errPkg.Fields{"opt":note.opt.name()})
+	}
+
+	if note.processErr == nil {
+		f, err := os.OpenFile(note.file, os.O_WRONLY, os.ModePerm)
+		defer f.Close()
+		if err != nil {
+			note.processErr = errPkg.FailBy(err, "mocking-file-note open file to write fail.", nil)
+		}
+		if _, err = f.WriteString(content); err != nil {
+			note.processErr = errPkg.FailBy(err, "mocking-file-note write content fail.", nil)
+		}
+	}
+
+	return note
+}
+
+func (note mockingFileNote) Remove() error {
+	if note.processErr != nil {
+		return note.processErr
+	}
+	return errPkg.Wrap(note.opt.back(note.file),
+		"mocking-file-note's opt exec back fail.", errPkg.Fields{"opt":note.opt.name()})
 }
 
 type mockingExistentFileNote struct {
@@ -110,7 +134,7 @@ type mockingExistentFileNote struct {
 	modTime time.Time
 }
 
-func mockExistentFile(file string) (*mockingExistentFileNote, error) {
+func mockExistentFile(file string, fStat os.FileInfo) (*mockingExistentFileNote, error) {
 	ext := filepath.Ext(file)
 	bf := common.BytesBufferPool.Get().(*bytes.Buffer)
 	defer common.BytesBufferPool.Put(bf)
@@ -125,41 +149,64 @@ func mockExistentFile(file string) (*mockingExistentFileNote, error) {
 
 	newFile := gainNewFile(file)
 	for {
-		if stat, err := os.Stat(newFile); os.IsNotExist(err) {
+		if _, err := os.Stat(newFile); os.IsNotExist(err) {
 			note := new(mockingExistentFileNote)
 			note.newFile = newFile
-			note.modTime = stat.ModTime()
-			note.mode = stat.Mode()
+			note.modTime = fStat.ModTime()
+			note.mode = fStat.Mode()
 			return note, nil
 		} else if err != nil {
-			err = errPkg.FailBy(err, "gain new file path, check if it is available fail", nil)
+			err = errPkg.FailBy(err, "gain new file path, check if it is available fail.", nil)
 			return nil, err
 		}
 		newFile = gainNewFile(newFile)
 	}
 }
 
-func (note mockingExistentFileNote) rollback(file string) error {
+func (note mockingExistentFileNote) forward(file string) error {
+	nf, err := os.OpenFile(note.newFile, os.O_CREATE|os.O_WRONLY, note.mode)
+	defer nf.Close()
+	if err != nil {
+		return errPkg.FailBy(err, "create replacement file with write_only fail.", nil)
+	}
+
+	f, err := os.OpenFile(file, os.O_RDWR|os.O_TRUNC, note.mode)
+	defer f.Close()
+	if err != nil {
+		return errPkg.FailBy(err, "open file with read_write and trunc fail.", nil)
+	}
+
+	if _, err := io.Copy(nf, f); err != nil {
+		nf.Close()
+		os.Remove(note.newFile)
+		return errPkg.FailBy(err, "exec copy: nf -> f fail.", errPkg.Fields{"f":file, "nf":note.newFile})
+	}
+
+    // https://stackoverflow.com/questions/44416645/truncate-a-file-in-golang
+	f.Truncate(0)
+	f.Seek(0, 0)
+	return nil
+}
+
+func (note mockingExistentFileNote) back(file string) error {
 	nf, err := os.OpenFile(note.newFile, os.O_RDONLY, note.mode)
 	defer nf.Close()
 	if err != nil {
-		return errPkg.FailBy(err, "open replacement file by read_only fail", nil)
+		return errPkg.FailBy(err, "open replacement file with read_only fail.", nil)
 	}
 
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY, note.mode)
 	defer f.Close()
 	if err != nil {
-		return errPkg.FailBy(err, "re-create file by write_only fail", nil)
+		return errPkg.FailBy(err, "re-create file with write_only fail.", nil)
 	}
 
 	if _, err := io.Copy(f, nf); err != nil {
 		f.Close()
-		nf.Close()
 		os.Remove(file)
-		return errPkg.FailBy(err, "exec copy fail", nil)
+		return errPkg.FailBy(err, "exec copy: nf -> f fail.", errPkg.Fields{"f":file, "nf":note.newFile})
 	}
 
-	f.Close()
 	nf.Close()
 	os.Remove(note.newFile)
 	os.Chtimes(note.newFile, note.modTime, note.modTime)
@@ -167,7 +214,7 @@ func (note mockingExistentFileNote) rollback(file string) error {
 }
 
 func (note mockingExistentFileNote) name() string {
-	return "mocking-existent-file note"
+	return "mock existent-file"
 }
 
 type mockingNonExistentFileNote struct {
@@ -194,17 +241,27 @@ func mockNonExistentFile(file string) (*mockingNonExistentFileNote, error) {
 		}
 	}
 
-	if err := os.Mkdir(filepath.Dir(file), 0755); err != nil {
-		return nil, err
-	}
-
 	return &mockingNonExistentFileNote{createdDirs: createdDirs}, nil
 }
 
-func (note mockingNonExistentFileNote) rollback(file string) error {
+func (note mockingNonExistentFileNote) forward(file string) error {
+	if err := os.MkdirAll(filepath.Dir(file), 0755); err != nil {
+		return errPkg.FailBy(err, "create file's dir fail.", nil)
+	}
+
+	f, err := os.OpenFile(file, os.O_CREATE, 0666)
+	defer f.Close()
+	if err != nil {
+		return errPkg.FailBy(err, "create file fail.", nil)
+	}
+
+	return nil
+}
+
+func (note mockingNonExistentFileNote) back(file string) error {
 	for i:=len(note.createdDirs); i>0; i-- {
 		if err := os.Remove(note.createdDirs[i-1]); err != nil {
-			return errPkg.FailBy(err, "remove created dir fail", nil)
+			return errPkg.FailBy(err, "remove created dir fail.", nil)
 		}
 	}
 	os.Remove(file)
@@ -212,10 +269,25 @@ func (note mockingNonExistentFileNote) rollback(file string) error {
 }
 
 func (note mockingNonExistentFileNote) name() string {
-	return "mocking-non-existent-file note"
+	return "mock non-existent-file"
 }
 
 // https://stackoverflow.com/questions/14249217/how-do-i-know-im-running-within-go-test
 func IsInTesting() bool {
 	return flag.Lookup("test.v") != nil
+}
+
+func IgnoreCreatedAt(err error) error {
+	known, ok := err.(*errPkg.Err)
+	if !ok {
+		return err
+	}
+
+	return &errPkg.Err{
+		CreatedAt:time.Unix(0,0),
+		Msg: known.Msg,
+		Fields: known.Fields,
+		Cause: known.Cause,
+		StackInfo: known.StackInfo,
+	}
 }

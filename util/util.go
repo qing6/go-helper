@@ -48,12 +48,12 @@ func CreateDirIfNotExist(dir string) error {
 func GetIntranetIP() (string, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return "", errPkg.FailBy(err, "query system net interfaces fail", nil)
+		return "", errPkg.FailBy(err, "query system net interfaces fail.", nil)
 	}
 	for _, i := range ifaces {
 		addrs, err := i.Addrs()
 		if err != nil {
-			return "", errPkg.FailBy(err, "query unicast interface addresses fail",
+			return "", errPkg.FailBy(err, "query unicast interface addresses fail.",
 				errPkg.Fields{"interface":fmt.Sprintf("%+v", i)})
 		}
 		for _, addr := range addrs {
@@ -69,5 +69,5 @@ func GetIntranetIP() (string, error) {
 			}
 		}
 	}
-	return "", errPkg.Fail("query global unicate ip fail", errPkg.Fields{"interfaces": ifaces})
+	return "", errPkg.Fail("query global unicate ip fail.", errPkg.Fields{"interfaces": ifaces})
 }

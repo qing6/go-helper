@@ -35,10 +35,11 @@ func (err *Err) Error() string {
 	bf := common.BytesBufferPool.Get().(*bytes.Buffer)
 	bf.Reset()
 	defer common.BytesBufferPool.Put(bf)
-	bf.WriteString("Error: at")
+	bf.WriteString("Error: ")
 	bf.WriteString(err.CreatedAt.Format(time.RFC3339Nano))
+	bf.WriteString(" ")
 	bf.WriteString(err.Msg)
-	bf.WriteString("\tinfo={")
+	bf.WriteString(" info= {")
 	for k, v := range err.Fields {
 		bf.WriteString(k)
 		bf.WriteString("=")
@@ -47,11 +48,12 @@ func (err *Err) Error() string {
 	}
 	bf.WriteString("\b}")
 	if err.Cause != nil {
-		bf.WriteString("\tcause=")
+		bf.WriteString(" cause= `")
 		bf.WriteString(err.Cause.Error())
+		bf.WriteString("`")
 	}
 	if err.StackInfo != nil {
-		bf.WriteString("\tstack=")
+		bf.WriteString(" stack= ")
 		bf.WriteString(err.StackInfo.String())
 	}
 	return bf.String()
